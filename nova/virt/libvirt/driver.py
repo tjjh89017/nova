@@ -4235,7 +4235,7 @@ class LibvirtDriver(driver.ComputeDriver):
             guest.add_device(consolelog)
 
     def _add_video_driver(self, guest, image_meta, flavor):
-        VALID_VIDEO_DEVICES = ("vga", "cirrus", "vmvga", "xen", "qxl")
+        VALID_VIDEO_DEVICES = ("vga", "cirrus", "vmvga", "xen", "qxl", "virtio")
         video = vconfig.LibvirtConfigGuestVideo()
         # NOTE(ldbragst): The following logic sets the video.type
         # depending on supported defaults given the architecture,
@@ -4251,6 +4251,9 @@ class LibvirtDriver(driver.ComputeDriver):
             # NOTE(ldbragst): PowerKVM doesn't support 'cirrus' be default
             # so use 'vga' instead when running on Power hardware.
             video.type = 'vga'
+        elif guestarch in (arch.AARCH64):
+            # NOTE(ychuang): AArch64 QEMU doesn't support 'cirrus' but 'virtio-gpu-pci'
+            video.type = 'virtio'
         elif CONF.spice.enabled:
             video.type = 'qxl'
         if image_meta.properties.get('hw_video_model'):

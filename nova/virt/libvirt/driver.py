@@ -4604,9 +4604,21 @@ class LibvirtDriver(driver.ComputeDriver):
             consolepty.type = "pty"
             guest.add_device(consolepty)
 
-        tablet = self._get_guest_usb_tablet(guest.os_type)
-        if tablet:
-            guest.add_device(tablet)
+        guestarch = libvirt_utils.get_arch(image_meta)
+        if guestarch in (arch.AARCH64):
+            # NOTE(ychuang): aarch64 doesn't have default usb bus
+            # so use virtio-input instead
+            tablet = self._get_guest_virtio_tablet(guest.os_type)
+            if tablet:
+                guest.add_device(tablet)
+
+            keyboard = self._get_guest_virtio_keyboard(guest.os_type)
+            if keyboard:
+                guest.add_device(keyboard)
+        else:
+            tablet = self._get_guest_usb_tablet(guest.os_type)
+            if tablet:
+                guest.add_device(tablet)
 
         if (CONF.spice.enabled and CONF.spice.agent_enabled and
                 virt_type not in ('lxc', 'uml', 'xen')):
@@ -4708,6 +4720,42 @@ class LibvirtDriver(driver.ComputeDriver):
             tablet.type = "tablet"
             tablet.bus = "usb"
         return tablet
+
+    def _get_guest_virtio_tablet(self, os_type):
+        # We want a tablet if VNC is enabled, or SPICE is enabled and
+        # the SPICE agent is disabled. If the SPICE agent is enabled
+        # it provides a paravirt mouse which drastically reduces
+        # overhead (by eliminating USB polling).
+        #
+        # NB: this implies that if both SPICE + VNC are enabled
+        # at the same time, we'll get the tablet whether the
+        # SPICE agent is used or not.
+        need_virtio_tablet = False
+        if CONF.vnc.enabled:
+            need_virtio_tablet = CONF.libvirt.use_usb_tablet
+        elif CONF.spice.enabled and not CONF.spice.agent_enabled:
+            need_virtio_tablet = CONF.libvirt.use_usb_tablet
+
+        tablet = None
+        if need_virtio_tablet and os_type == vm_mode.HVM:
+            tablet = vconfig.LibvirtConfigGuestInput()
+            tablet.type = "tablet"
+            tablet.bus = "virtio"
+        return tablet
+
+    def _get_guest_virtio_keyboard(self, os_type):
+        need_virtio_keyboard = False
+        if CONF.vnc.enabled:
+            need_virtio_keyboard = CONF.libvirt.use_usb_tablet
+        elif CONF.spice.enabled and not CONF.spice.agent_enabled:
+            need_virtio_keyboard = CONF.libvirt.use_usb_tablet
+
+        keyboard = None
+        if need_virtio_keyboard and os_type == vm_mode.HVM:
+            keyboard = vconfig.LibvirtConfigGuestInput()
+            keyboard.type = "keyboard"
+            keyboard.bus = "virtio"
+        return keyboard
 
     def _get_guest_xml(self, context, instance, network_info, disk_info,
                        image_meta, rescue=None,
